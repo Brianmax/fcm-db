@@ -24,7 +24,7 @@ DATABASE_URL = "postgresql://postgres:password@localhost:5432/first_colony"
 ids = []
 
 
-#internal_companies = client.fetch_internal_org()
+# internal_companies = client.fetch_internal_org()
 
 
 # externalCompaniesComplete = get_all_complete_companies(client, ids)
@@ -34,7 +34,9 @@ with open("external_companies.json", "r", encoding="utf-8") as f:
 
 externalCompanies = []
 for external_company in externalCompaniesComplete:
-    externalCompanies.append(external_company.get("basicInfo"))
+    externalCompanies.append({
+        "basicInfo": external_company.get("basicInfo"),
+    })
 
 for external_company in externalCompanies:
     ids.append(external_company.get("id"))

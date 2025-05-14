@@ -1,8 +1,11 @@
 import json
+
+from pandas.core.interchange.dataframe_protocol import DataFrame
 from tqdm import tqdm
 import re
 import pandas as pd
 import uuid
+from datetime import datetime
 
 
 
@@ -85,7 +88,7 @@ def map_external_companies_encompass_to_company(api_data):
             "phone": basic_info.get("phoneNumber", ""),
             "address": f"{address.get('street1', '')}, {address.get('city', '')}, {address.get('state', '')} {address.get('zip', '')}".strip(", "),
             "encompass_id": basic_info.get("id"),
-            "last_login": basic_info.get("lastLogin"),
+            "last_login": basic_info.get("lastLogin", datetime.now().isoformat()),
             "status": status,
             "hide_rate": False,
             "tpo_id": basic_info.get("tpoId", ""),
@@ -122,7 +125,10 @@ def map_external_companies_approval_status(uuid_company, api_data):
         "company_id": [uuid_company],
         "current_status": [current_status],
         "add_to_watchlist": [approval_status.get("addToWatchlist", "")],
-        "approved_date": [approval_status.get("approvedDate")]
+        "current_status_date": [approval_status.get("currentStatusDate", datetime.now().isoformat())],
+        "approved_date": [approval_status.get("approvedDate", datetime.now().isoformat())],
+        "application_date": [approval_status.get("applicationDate", datetime.now().isoformat())],
+        "use_parent_info_approval_status": [approval_status.get("useParentInfoApprovalStatus", "")],
     }
 
     return pd.DataFrame(approval_status_df)
@@ -225,7 +231,7 @@ def map_external_lender_contact(uuid_company, api_data):
         }
         lenderContacts.append(lender_contact_df)
 
-    df = pd.DataFrame(lenderContacts).drop_duplicates()
+    df = pd.DataFrame(lenderContacts)
     return df
 
 
@@ -341,6 +347,8 @@ def map_external_sales_rep_aes(uuid_company, sales_rep_data):
     rows = []
 
     for rep in sales_rep_data:
+        persona = rep.get("persona", [])
+        persona = [p.replace(" ", "_").upper() for p in persona] if isinstance(persona, list) else [persona.upper()]
         row = {
             "id": str(uuid.uuid4()),
             "company_id": uuid_company,
@@ -353,16 +361,15 @@ def map_external_sales_rep_aes(uuid_company, sales_rep_data):
             "is_lender_contact": rep.get("isLenderContact", False),
             "is_hidden": rep.get("isHidden", False),
             "name": rep.get("name"),
-            "persona": rep.get("persona"),
+            "persona": persona,
             "phone": rep.get("phone"),
             "email": rep.get("email"),
             "org_assignment": rep.get("orgAssignment"),
             "title": rep.get("title")
         }
-        df = pd.DataFrame([row])
-        rows.append(df)
+        rows.append(row)
 
-    return rows
+    return pd.DataFrame(rows)
 
 def map_external_lo_comp_histories(uuid_company, api_data_list):
     api_data_list = api_data_list.get("loCompHistory", [])
@@ -542,7 +549,7 @@ def map_external_custom_fields(uuid_company, api_data):
             "id": str(uuid.uuid4()),
             "field_name": field.get("fieldName"),
             "field_type": field.get("fieldType"),
-            "companyId": uuid_company
+            "company_id": uuid_company
         }
         rows.append(row)
 
@@ -575,6 +582,32 @@ def map_external_broker(uuid_loan_criteria, api_data):
 
     return pd.DataFrame([row])
 
+def map_external_product_and_pricing(uuid_company, api_data):
+    if api_data is None:
+        return pd.DataFrame()
+    row = {
+        "id": str(uuid.uuid4()),
+        "company_id": uuid_company,
+        "use_parent_info_for_epps": api_data.get("useParentInfoForEpps", False),
+        "epps_user_name": api_data.get("eppsUserName")
+    }
+    return pd.DataFrame([row])
+
+def map_external_price_groups(product_and_pricing_id, api_data):
+    result = [{"key": k, "value": v} for k, v in api_data["priceGroups"].items()]
+    rows = []
+
+    for pg in result:
+        row = {
+            "id": str(uuid.uuid4()),
+            "price_group_type": pg["key"].upper(),
+            "description": pg["value"],
+            "product_and_pricing_id": product_and_pricing_id
+        }
+        rows.append(row)
+
+    return pd.DataFrame(rows)
+
 def splitString(s):
     return re.sub(r'(?<!^)(?=[A-Z])', '_', s).upper()
 
@@ -599,7 +632,7 @@ def map_external_correspondent_settings(uuid_correspondent, api_data):
         loanTypes = [splitString(lt) for lt in loanTypes] if isinstance(loanTypes, list) else [loanTypes]
         loanPurposes = [splitString(lp) for lp in loanPurposes] if isinstance(loanPurposes, list) else [loanPurposes]
         row = {
-            "id": str(uuid.uuid4()),
+            "internal_id": str(uuid.uuid4()),
             "correspondent_id": uuid_correspondent,
             "loan_policy_for_unlicesed_states": api_data.get("loanPolicyForUnlicesedStates"),
             "warning_message": api_data.get("warningMessage"),
@@ -614,7 +647,7 @@ def map_external_correspondent_settings(uuid_correspondent, api_data):
         loanTypes = [splitString(lt) for lt in loanTypes] if isinstance(loanTypes, list) else [loanTypes]
         loanPurposes = [splitString(lp) for lp in loanPurposes] if isinstance(loanPurposes, list) else [loanPurposes]
         row = {
-            "id": str(uuid.uuid4()),
+            "internal_id": str(uuid.uuid4()),
             "correspondent_id": uuid_correspondent,
             "loan_policy_for_unlicesed_states": api_data.get("loanPolicyForUnlicesedStates"),
             "warning_message": api_data.get("warningMessage"),

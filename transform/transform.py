@@ -1,8 +1,6 @@
-from numpy import dtype
 from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.sql._elements_constructors import text
-import pandas as pd
 import enum
 from sqlalchemy.dialects.postgresql import ENUM, ARRAY
 from sqlalchemy.types import Uuid
@@ -37,6 +35,19 @@ class PersonaRolesEnum(enum.Enum):
     LOAN_OFFICER = "LOAN_OFFICER"
     TPO_ACCOUNT_EXCECUTIVE = "TPO_ACCOUNT_EXCECUTIVE"
     TPO_LOAN_OFFICER = "TPO_LOAN_OFFICER"
+    TPO_ACCOUNT_MANAGER = "TPO_ACCOUNT_MANAGER"
+    SUPER_ADMINISTRATOR = "SUPER_ADMINISTRATOR"
+    UNDERWRITER = "UNDERWRITER"
+    SECONDARY_MARKETING = "SECONDARY_MARKETING"
+    SERVICER = "SERVICER"
+    ACCOUNTING = "ACCOUNTING"
+    EVERY_USER = "EVERY_USER"
+    OPERATIONS_MANAGER = "OPERATIONS_MANAGER"
+    TPO_UNDERWRITER = "TPO_UNDERWRITER"
+    ADMINISTRATOR = "ADMINISTRATOR"
+    TPO_CLOSER = "TPO_CLOSER"
+    TPO_LOAN_SETUP = "TPO_LOAN_SETUP"
+    TPO_OPS_ADMIN = "TPO_OPS_ADMIN"
 
 persona_roles_enum = ENUM(
     PersonaRolesEnum,
@@ -117,7 +128,7 @@ def insert_companies_to_db(companies_df, database_url, external_companies, compl
                 fees = map_external_late_fee_setting(uuid_company, completeInfo.get("fees"))
                 fees.to_sql('fees', engine, if_exists="append", index=False, schema="company-management")
                 #insert lenderContacts
-                # lenderContacts = map_external_lender_contact(uuid_company, completeInfo.get("lenderContacts"))
+                lenderContacts = map_external_lender_contact(uuid_company, completeInfo.get("lenderContacts"))
                 # print(f"lenderContacts: {len(lenderContacts)}")
                 # for lenderContact in lenderContacts:
                 #    lenderContact.to_sql("lender-contacts",engine, if_exists="append", index=False, schema="company-management")
@@ -142,11 +153,6 @@ def insert_companies_to_db(companies_df, database_url, external_companies, compl
                 tpoContacts = map_external_tpo_contacts(uuid_company, completeInfo.get("tpoContacts"))
                 for tpoContact in tpoContacts:
                     tpoContact.to_sql("tpo_contacts", engine, if_exists="append", index=False, schema="company-management")
-
-                # insert sales rep
-                #salesRep = map_external_sales_rep_aes(uuid_company, completeInfo.get("salesRepAe"))
-                #for salesRep in salesRep:
-                    #salesRep.to_sql("sales_rep_aes", engine, if_exists="append", index=False, schema="company-management")
 
                 # insert locomphistory
                 loCompHistory = map_external_lo_comp_histories(uuid_company, completeInfo.get("loComp"))
@@ -185,21 +191,44 @@ def insert_companies_to_db(companies_df, database_url, external_companies, compl
 
                 # insert custom fields
                 customFields = map_external_custom_fields(uuid_company, completeInfo.get("customFields").get("fields", []))
-                customFields.to_sql('custom_fields', engine, if_exists="append", index=False, schema="company-management")
+                customFields.to_sql('CustomFields', engine, if_exists="append", index=False, schema="company-management")
 
+                # insert loan criterias
                 loanCriteria = map_external_loan_criteria(uuid_company, completeInfo.get("loanCriteria"))
                 loanCriteria.to_sql('loan_criterias', engine, if_exists="append", index=False, schema="company-management")
 
+                # insert brokers - loan criterias
                 brokerLoanCriteria = map_external_broker(loanCriteria["id"].iloc[0], completeInfo.get("loanCriteria").get("broker", []))
                 brokerLoanCriteria.to_sql('brokers', engine, if_exists="append", index=False, schema="company-management",
                                           dtype={"loan_types": ARRAY(loan_types_enum), "company_id": Uuid(),
                                                  "loan_purposes": ARRAY(loan_purposes_enum)})
-
+                # insert correspondants - loan criterias
                 correspondantsLoanCriteria = map_external_correspondent(loanCriteria["id"].iloc[0], completeInfo.get("loanCriteria").get("correspondent"))
-                correspondantsLoanCriteria.to_sql('correspondents', engine, if_exists="append", index=False, schema="company-management")
+                correspondantsLoanCriteria.to_sql('correspondets', engine, if_exists="append", index=False, schema="company-management")
 
-                loanCorrespondants = map_external_correspondent_settings(uuid_company, completeInfo.get("loanCriteria").get("correspondent"))
+                # insert correspondents settings
+                loanCorrespondants = map_external_correspondent_settings(correspondantsLoanCriteria["id"].iloc[0], completeInfo.get("loanCriteria").get("correspondent"))
                 loanCorrespondants.to_sql('correspondets_settings', engine, if_exists="append", index=False, schema="company-management")
+
+                # insert sales rep
+                if row["encompass_id"] == 65:
+                    print("stop here")
+                salesRep = map_external_sales_rep_aes(uuid_company, completeInfo.get("salesRepAe"))
+                salesRep.to_sql('sales_rep_aes', engine, if_exists="append", index=False, schema="company-management", dtype={"persona": ARRAY(persona_roles_enum)})
+
+                #insert product and pricing
+                if row["encompass_id"] == 59:
+                    print("stop here")
+                productPricing = map_external_product_and_pricing(uuid_company, completeInfo.get("basicInfo").get("productAndPricing"))
+                if not productPricing.empty:
+                    productPricing.to_sql('product_and_pricing', engine, if_exists="append", index=False, schema="company-management")
+
+                # insert PriceGroup
+
+                priceGroup = map_external_price_groups(productPricing["id"].iloc[0], completeInfo.get("basicInfo").get("productAndPricing"))
+                if not priceGroup.empty:
+                    priceGroup.to_sql('price_groups', engine, if_exists="append", index=False, schema="company-management")
+
 
             except IntegrityError as e:
                 if "duplicate key value violates unique constraint" in str(e):
